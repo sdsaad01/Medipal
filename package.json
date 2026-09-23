@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
+    "@twilio/voice-sdk": "^2.18.5",
     "body-parser": "^2.2.0",
     "clsx": "^2.0.0",
     "cors": "^2.8.5",

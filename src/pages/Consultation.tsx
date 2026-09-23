@@ -1,74 +1,178 @@
-import { useState } from 'react';
-import { Phone, Mic, MicOff } from 'lucide-react';
+import { useEffect, useRef, useState } from "react";
+import { Device, Call } from "@twilio/voice-sdk";
 
-const Consultation = () => {
+const TOKEN_URL =
+  "https://cwlntqhxzipeuyoyrzfw.supabase.co/functions/v1/twilio-token";
+
+export default function Consultation() {
   const [isCallActive, setIsCallActive] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [status, setStatus] = useState("Ready to call");
 
-  const startCall = () => {
-    setIsCallActive(true);
-    // Add OpenAI voice call integration logic here
+  const deviceRef = useRef<Device | null>(null);
+  const callRef = useRef<Call | null>(null);
+
+  const startCall = async () => {
+    try {
+      setStatus("Getting secure voice token...");
+
+      const response = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Token request failed: ${response.status}`,
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.token) {
+        throw new Error(
+          data.error || "No Twilio token received",
+        );
+      }
+
+      setStatus("Connecting to MediPal...");
+
+      const device = new Device(data.token, {
+        logLevel: 1,
+      });
+
+      deviceRef.current = device;
+
+      device.on("registered", () => {
+        console.log("Twilio Device registered");
+      });
+
+      device.on("error", (error) => {
+        console.error("Twilio Device error:", error);
+        setStatus(`Call error: ${error.message}`);
+        setIsCallActive(false);
+      });
+
+      device.on("incoming", (call) => {
+        console.log("Incoming call:", call);
+      });
+
+      await device.register();
+
+      console.log("Twilio Device ready");
+
+      const call = await device.connect();
+
+      callRef.current = call;
+
+      call.on("accept", () => {
+        console.log("Call accepted");
+        setIsCallActive(true);
+        setStatus("MediPal AI is connected");
+      });
+
+      call.on("disconnect", () => {
+        console.log("Call disconnected");
+        setIsCallActive(false);
+        setStatus("Call ended");
+      });
+
+      call.on("cancel", () => {
+        console.log("Call cancelled");
+        setIsCallActive(false);
+        setStatus("Call cancelled");
+      });
+
+      call.on("reject", () => {
+        console.log("Call rejected");
+        setIsCallActive(false);
+        setStatus("Call rejected");
+      });
+
+      call.on("error", (error) => {
+        console.error("Call error:", error);
+        setIsCallActive(false);
+        setStatus(`Call error: ${error.message}`);
+      });
+
+    } catch (error) {
+      console.error("Start call error:", error);
+
+      setIsCallActive(false);
+
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to start call",
+      );
+    }
   };
 
   const endCall = () => {
+    console.log("Ending call...");
+
+    callRef.current?.disconnect();
+
+    deviceRef.current?.disconnectAll();
+
+    deviceRef.current?.destroy();
+
+    callRef.current = null;
+    deviceRef.current = null;
+
     setIsCallActive(false);
+    setStatus("Call ended");
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-  };
+  useEffect(() => {
+    return () => {
+      callRef.current?.disconnect();
+      deviceRef.current?.destroy();
+    };
+  }, []);
 
   return (
-    <div className="pb-20">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">AI Consultation</h1>
+    <div className="max-w-2xl mx-auto p-6">
 
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+
+        <h1 className="text-3xl font-bold mb-3">
+          MediPal AI Consultation
+        </h1>
+
+        <p className="text-gray-600 mb-8">
+          Talk to MediPal's AI voice assistant.
+        </p>
+
+        <div className="mb-6">
+          <p className="text-sm text-gray-500">
+            Status
+          </p>
+
+          <p className="font-medium mt-1">
+            {status}
+          </p>
+        </div>
+
         {!isCallActive ? (
-          <div className="text-center">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">Start AI Consultation</h2>
-              <p className="text-gray-600">Our AI doctor is ready to assist you</p>
-            </div>
-            <button
-              onClick={startCall}
-              className="bg-green-500 text-white px-6 py-3 rounded-full flex items-center justify-center space-x-2 mx-auto hover:bg-green-600 transition-colors"
-            >
-              <Phone size={20} />
-              <span>Start Call</span>
-            </button>
-          </div>
+          <button
+            onClick={startCall}
+            className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-semibold text-lg"
+          >
+            📞 Start MediPal Call
+          </button>
         ) : (
-          <div className="space-y-6">
-            <div className="text-center">
-              <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Phone size={32} className="text-blue-600" />
-              </div>
-              <p className="text-lg font-semibold">AI Doctor</p>
-              <p className="text-sm text-gray-600">Call in progress...</p>
-            </div>
-
-            <div className="flex justify-center space-x-4">
-              <button
-                onClick={toggleMute}
-                className={`p-4 rounded-full ${
-                  isMuted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-              </button>
-              <button
-                onClick={endCall}
-                className="bg-red-500 text-white px-6 py-3 rounded-full flex items-center space-x-2 hover:bg-red-600 transition-colors"
-              >
-                <Phone size={20} />
-                <span>End Call</span>
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={endCall}
+            className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 rounded-xl font-semibold text-lg"
+          >
+            ☎️ End Call
+          </button>
         )}
+
       </div>
+
     </div>
   );
-};
-
-export default Consultation;
+}
